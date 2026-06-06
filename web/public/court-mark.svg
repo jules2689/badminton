@@ -1,0 +1,5 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Badminton court mark">
+  <rect width="64" height="64" rx="8" fill="#184f36"/>
+  <path d="M12 14h40v36H12zM12 32h40M24 14v36M40 14v36M18 23h28M18 41h28" fill="none" stroke="#f7f4ea" stroke-width="2.5" stroke-linecap="square"/>
+  <path d="M9 54h46" stroke="#e23b3b" stroke-width="4" stroke-linecap="round"/>
+</svg>

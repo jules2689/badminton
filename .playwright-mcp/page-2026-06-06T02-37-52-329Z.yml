@@ -1,0 +1,22 @@
+- main [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e5]:
+      - heading "Court availability" [level=1] [ref=e6]
+      - paragraph [ref=e7]: Vision Badminton Centre
+    - generic "Calendar controls" [ref=e8]:
+      - button "Previous day" [ref=e9]: ‹
+      - textbox [ref=e10]: 2026-06-05
+      - button "Next day" [ref=e11]: ›
+      - button "Refresh" [ref=e12]
+  - region "Calendar summary" [ref=e13]:
+    - generic [ref=e14]:
+      - generic [ref=e15]: Courts
+      - strong [ref=e16]: "-"
+    - generic [ref=e17]:
+      - generic [ref=e18]: Bookings
+      - strong [ref=e19]: "-"
+    - generic [ref=e20]:
+      - generic [ref=e21]: Fetched
+      - strong [ref=e22]: "-"
+  - region "Court booking calendar" [ref=e23]:
+    - status [ref=e24]: Loading bookings
