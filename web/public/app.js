@@ -181,7 +181,7 @@ function renderViewModeButtons() {
 
 function updateStatus() {
   const viewLabel =
-    currentViewMode === "overview" ? "Overview" : "Choose your availability";
+    currentViewMode === "overview" ? "Everyone's" : "Your availability";
   setStatus(`${formatWeekRange(currentDates)} · ${viewLabel}`);
 }
 
@@ -316,7 +316,7 @@ function getSlotAvailability({
 function renderOverviewHeatmap({ dates, slots, locations, bookingsByLocationAndDate }) {
   if (!groupAvailability || groupAvailability.users.length === 0) {
     elements.calendar.replaceChildren(
-      createOverviewEmptyState("No one has signed in yet. Overview needs saved availability from your group.")
+      createOverviewEmptyState("No one has signed in yet. Everyone's view needs saved availability from your group.")
     );
     return;
   }
@@ -726,23 +726,9 @@ function createAvailabilityCell({ date, slot, locations, bookingsByLocationAndDa
     bookingsByLocationAndDate
   });
 
-  cell.classList.add(`availability-${availability.state}`);
   cell.dataset.availabilityLabel = `${availabilityStateLabel(availability.state)}: ${
     availability.totalAvailable
   }/${availability.totalCourts} courts at ${formatSlotTime(startMinute)}`;
-
-  const summary = createNode("div", "slot-summary");
-  summary.append(
-    createNode(
-      "span",
-      `availability-mark availability-mark-${availability.state}`,
-      availabilityStatusIcon(availability.state)
-    )
-  );
-  summary.append(
-    createNode("strong", "", `${availability.totalAvailable}/${availability.totalCourts}`)
-  );
-  cell.append(summary);
 
   if (availability.locationSummaries.length > 0) {
     cell.append(createSlotLocationsElement(availability.locationSummaries));
@@ -1281,18 +1267,6 @@ function updateCellTitle(cell) {
   }
 
   cell.title = parts.join(" · ");
-}
-
-function availabilityStatusIcon(state) {
-  switch (state) {
-    case "high":
-      return "✓";
-    case "low":
-      return "!";
-    case "none":
-    default:
-      return "×";
-  }
 }
 
 function availabilityStateLabel(state) {

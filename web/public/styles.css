@@ -105,9 +105,9 @@ select {
 
 .topbar {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: 18px;
+  gap: 16px;
   margin-bottom: 16px;
 }
 
@@ -147,9 +147,18 @@ h1 {
   display: flex;
   grid-column: 3;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 12px;
+  flex-wrap: nowrap;
   justify-content: flex-end;
+  justify-self: end;
+  min-width: 0;
+}
+
+.controls-date {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .auth-corner {
@@ -157,6 +166,7 @@ h1 {
   grid-column: 1;
   align-items: center;
   justify-content: flex-start;
+  justify-self: start;
   min-width: 0;
 }
 
@@ -194,7 +204,6 @@ h1 {
 }
 
 .icon-button,
-.refresh-button,
 .date-input {
   height: 40px;
   border: 1px solid var(--line);
@@ -211,18 +220,10 @@ h1 {
   line-height: 1;
 }
 
-.refresh-button,
 .date-input {
   padding: 0 14px;
   font-family: ui-sans-serif, "Gill Sans", "Trebuchet MS", sans-serif;
   font-size: 14px;
-}
-
-.refresh-button {
-  background: var(--court);
-  border-color: var(--court);
-  color: var(--on-court);
-  font-weight: 700;
 }
 
 .view-toggle {
@@ -300,12 +301,41 @@ h1 {
   }
 }
 
+.status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-right: 16px;
+}
+
 .status {
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: 44px;
-  padding: 12px 16px;
+  padding: 12px 0 12px 16px;
   color: var(--muted);
   font-family: ui-sans-serif, "Gill Sans", "Trebuchet MS", sans-serif;
   font-size: 14px;
+}
+
+.status-action {
+  flex-shrink: 0;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--court);
+  font-family: ui-sans-serif, "Gill Sans", "Trebuchet MS", sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .panel-meta {
@@ -543,43 +573,6 @@ h1 {
   font-family: ui-sans-serif, "Gill Sans", "Trebuchet MS", sans-serif;
 }
 
-.availability-cell.availability-high {
-  background: var(--green-soft);
-}
-
-.availability-cell.availability-low {
-  background: var(--yellow-soft);
-}
-
-.availability-cell.availability-none {
-  background: var(--gray-soft);
-  color: var(--muted);
-}
-
-.slot-summary {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  line-height: 1;
-}
-
-.slot-summary strong {
-  min-width: 0;
-  overflow: hidden;
-  font-size: 10px;
-  font-weight: 800;
-  line-height: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.slot-summary .availability-mark {
-  width: 14px;
-  height: 14px;
-  font-size: 9px;
-}
-
 .availability-editable {
   cursor: pointer;
   touch-action: manipulation;
@@ -602,19 +595,20 @@ body.availability-dragging .availability-editable {
 .availability-cell[data-user-status="available"] {
   background: var(--green-soft);
   box-shadow: inset 3px 0 0 var(--green);
+  padding-right: 44px;
 }
 
 .availability-cell[data-user-status="maybe"] {
   background: var(--yellow-soft);
   box-shadow: inset 3px 0 0 var(--yellow);
+  padding-right: 56px;
 }
 
 .availability-cell[data-user-status="available"]::after,
 .availability-cell[data-user-status="maybe"]::after {
-  position: static;
-  align-self: flex-end;
-  order: -1;
-  margin: 0 0 2px;
+  position: absolute;
+  top: 4px;
+  right: 6px;
   padding: 0 4px;
   border: 1px solid transparent;
   border-radius: 4px;
@@ -623,7 +617,7 @@ body.availability-dragging .availability-editable {
   font-weight: 700;
   line-height: 1.35;
   letter-spacing: 0.01em;
-  flex: 0 0 auto;
+  pointer-events: none;
 }
 
 .availability-cell[data-user-status="available"]::after {
@@ -972,15 +966,25 @@ body.availability-dragging .availability-editable {
   .brand,
   .controls {
     grid-column: 1;
+    justify-self: stretch;
+  }
+
+  .brand {
+    justify-content: flex-start;
   }
 
   h1 {
     font-size: 25px;
+    text-align: left;
   }
 
   .controls {
     width: 100%;
-    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .controls-date {
+    flex: 1 1 auto;
   }
 
   .date-input {
@@ -989,6 +993,15 @@ body.availability-dragging .availability-editable {
 
   .view-toggle {
     flex: 1 1 100%;
+  }
+
+  .status-bar {
+    flex-wrap: wrap;
+    padding-right: 12px;
+  }
+
+  .status {
+    padding-left: 12px;
   }
 
   .view-toggle-button {

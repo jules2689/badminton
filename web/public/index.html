@@ -25,28 +25,32 @@
         </div>
 
         <div class="controls" aria-label="Calendar controls">
-          <button id="previousWeek" class="icon-button" type="button" title="Previous week" aria-label="Previous week">
-            <span aria-hidden="true">‹</span>
-          </button>
-          <input id="dateInput" class="date-input" type="date" />
-          <button id="nextWeek" class="icon-button" type="button" title="Next week" aria-label="Next week">
-            <span aria-hidden="true">›</span>
-          </button>
-          <div class="view-toggle" role="group" aria-label="View mode">
-            <button class="view-toggle-button" type="button" data-view-mode="calendar" aria-pressed="true">
-              Choose your availability
+          <div class="controls-date">
+            <button id="previousWeek" class="icon-button" type="button" title="Previous week" aria-label="Previous week">
+              <span aria-hidden="true">‹</span>
             </button>
-            <button class="view-toggle-button" type="button" data-view-mode="overview" aria-pressed="false">
-              Overview
+            <input id="dateInput" class="date-input" type="date" />
+            <button id="nextWeek" class="icon-button" type="button" title="Next week" aria-label="Next week">
+              <span aria-hidden="true">›</span>
             </button>
           </div>
-          <button id="refreshButton" class="refresh-button" type="button">Refresh</button>
+          <div class="view-toggle" role="group" aria-label="View mode">
+            <button class="view-toggle-button" type="button" data-view-mode="calendar" aria-pressed="true">
+              Your availability
+            </button>
+            <button class="view-toggle-button" type="button" data-view-mode="overview" aria-pressed="false">
+              Everyone's
+            </button>
+          </div>
         </div>
       </header>
 
       <section class="calendar-panel" aria-label="Court booking calendar" data-view-mode="calendar">
         <div class="panel-meta">
-          <div id="status" class="status" role="status">Loading bookings</div>
+          <div class="status-bar">
+            <div id="status" class="status" role="status">Loading bookings</div>
+            <button id="refreshButton" class="status-action" type="button">Reload bookings</button>
+          </div>
           <div class="legend legend-calendar" aria-label="Legend">
             <div class="legend-group">
               <span class="legend-heading">Courts</span>
