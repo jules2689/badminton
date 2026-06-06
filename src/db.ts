@@ -79,13 +79,50 @@ export function getPostgresConnectionString(): string {
   return connectionString;
 }
 
+function createPoolConfig(connectionString: string, max: number) {
+  const config: { connectionString: string; max: number; ssl?: { rejectUnauthorized: boolean } } = {
+    connectionString,
+    max
+  };
+  const ssl = resolvePostgresSsl(connectionString);
+
+  if (ssl) {
+    config.ssl = ssl;
+  }
+
+  return config;
+}
+
+function resolvePostgresSsl(
+  connectionString: string
+): { rejectUnauthorized: boolean } | undefined {
+  if (process.env.PGSSLMODE?.trim().toLowerCase() === "disable") {
+    return undefined;
+  }
+
+  let hostname = "";
+
+  try {
+    hostname = new URL(connectionString).hostname;
+  } catch {
+    return process.env.PGSSLMODE ? { rejectUnauthorized: false } : undefined;
+  }
+
+  const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
+
+  if (isLocal) {
+    return undefined;
+  }
+
+  return {
+    rejectUnauthorized: process.env.POSTGRES_SSL_REJECT_UNAUTHORIZED?.trim() === "true"
+  };
+}
+
 export async function runMigrations(
   connectionString = getPostgresConnectionString()
 ): Promise<string[]> {
-  const pool = new Pool({
-    connectionString,
-    max: 1
-  });
+  const pool = new Pool(createPoolConfig(connectionString, 1));
   const applied: string[] = [];
 
   try {
@@ -130,10 +167,7 @@ export async function runMigrations(
 export function createCalendarDatabase(
   connectionString = getPostgresConnectionString()
 ): CalendarDatabase {
-  const pool = new Pool({
-    connectionString,
-    max: 4
-  });
+  const pool = new Pool(createPoolConfig(connectionString, 4));
 
   return new PostgresCalendarDatabase(pool);
 }

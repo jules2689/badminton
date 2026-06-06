@@ -125,6 +125,8 @@ available, and yellow means fewer than 50% are available.
 ## Deploy on Vercel
 
 Set `POSTGRES_URL` (or `DATABASE_URL`) and `BASIC_AUTH_PASSWORD` in the project
-environment. Vercel runs `npm run vercel-build`, which compiles TypeScript and
-copies static assets into `public/`. All requests are routed through a serverless
-function so HTTP Basic Auth applies to the UI and API.
+environment. Remote Postgres hosts use SSL automatically; set
+`POSTGRES_SSL_REJECT_UNAUTHORIZED=true` only if your provider uses a publicly
+trusted certificate chain. Vercel runs `npm run vercel-build`, which compiles
+TypeScript and copies static assets into `public/`. All requests are routed
+through a serverless function so HTTP Basic Auth applies to the UI and API.

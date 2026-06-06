@@ -384,7 +384,13 @@ async function loadLocationDataset(location, startDate, endDate, days) {
       days
     });
 
-    await db.saveDataset(dataset);
+    if (db) {
+      try {
+        await db.saveDataset(dataset);
+      } catch (error) {
+        console.error(error);
+      }
+    }
 
     return {
       locationId: location.id,
@@ -412,6 +418,10 @@ async function loadLocationDataset(location, startDate, endDate, days) {
 }
 
 async function readLatestDatasetSafely(location, rangeStart, rangeEnd, options = {}) {
+  if (!db) {
+    return null;
+  }
+
   try {
     return await db.readLatestDataset({
       source: location.source,
