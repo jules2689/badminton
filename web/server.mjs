@@ -6,6 +6,7 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   createCalendarDatabase,
+  getPostgresConnectionString,
   runMigrations,
   fetchHymusCalendarRows,
   fetchVisionBadmintonCalendarRows
@@ -26,7 +27,7 @@ const publicDir = join(__dirname, "public");
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? "127.0.0.1";
 const cache = new Map();
-const databaseUrl = requireEnv("DATABASE_URL");
+const databaseUrl = getPostgresConnectionString();
 const basicAuthPassword = requireEnv("BASIC_AUTH_PASSWORD");
 const basicAuthRealm = process.env.BASIC_AUTH_REALM ?? "Badminton Calendar";
 const db = createCalendarDatabase(databaseUrl);

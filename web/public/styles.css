@@ -458,7 +458,8 @@ h1 {
   min-width: max-content;
 }
 
-.calendar[data-view-mode="overview"] {
+.calendar[data-view-mode="overview"],
+.calendar[data-view-mode="open-times"] {
   min-width: 0;
 }
 
@@ -543,7 +544,16 @@ h1 {
   font-family: ui-sans-serif, "Gill Sans", "Trebuchet MS", sans-serif;
 }
 
+.availability-cell.availability-high {
+  background: var(--green-soft);
+}
+
+.availability-cell.availability-low {
+  background: var(--yellow-soft);
+}
+
 .availability-cell.availability-none {
+  background: var(--gray-soft);
   color: var(--muted);
 }
 

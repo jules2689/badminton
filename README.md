@@ -108,10 +108,10 @@ Open `http://localhost:3000`. The browser will ask for HTTP Basic Auth. Use any
 username; that username becomes the display name for saved availability. The
 same `BASIC_AUTH_PASSWORD` value is accepted for every user.
 
-`DATABASE_URL` and `BASIC_AUTH_PASSWORD` are required. The web server verifies
-the database connection on startup and applies pending SQL migrations from
-`sql/migrations/`. Add new numbered files such as `002_add_foo.sql` when the
-schema changes:
+`DATABASE_URL` or `POSTGRES_URL`, plus `BASIC_AUTH_PASSWORD`, are required. The web
+server verifies the database connection on startup and applies pending SQL
+migrations from `sql/migrations/`. Add new numbered files such as
+`002_add_foo.sql` when the schema changes:
 
 ```bash
 npm run db:migrate

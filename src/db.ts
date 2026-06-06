@@ -68,13 +68,20 @@ const schemaMigrationsSql = `
   )
 `;
 
-export async function runMigrations(
-  connectionString = process.env.DATABASE_URL
-): Promise<string[]> {
+export function getPostgresConnectionString(): string {
+  const connectionString =
+    process.env.DATABASE_URL?.trim() || process.env.POSTGRES_URL?.trim();
+
   if (!connectionString) {
-    throw new Error("DATABASE_URL is required.");
+    throw new Error("DATABASE_URL or POSTGRES_URL is required.");
   }
 
+  return connectionString;
+}
+
+export async function runMigrations(
+  connectionString = getPostgresConnectionString()
+): Promise<string[]> {
   const pool = new Pool({
     connectionString,
     max: 1
@@ -121,12 +128,8 @@ export async function runMigrations(
 }
 
 export function createCalendarDatabase(
-  connectionString = process.env.DATABASE_URL
+  connectionString = getPostgresConnectionString()
 ): CalendarDatabase {
-  if (!connectionString) {
-    throw new Error("DATABASE_URL is required.");
-  }
-
   const pool = new Pool({
     connectionString,
     max: 4
