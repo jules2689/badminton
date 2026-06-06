@@ -81,6 +81,21 @@ export interface CourtCalendarDataset {
   import_batch: PostgresBookingImportBatchRow;
 }
 
+export interface PostgresAppUserRow {
+  id: string;
+  display_name: string;
+}
+
+export type UserAvailabilityStatus = "available" | "maybe" | "unavailable";
+
+export interface PostgresUserAvailabilityWindowRow {
+  id: string;
+  user_id: string;
+  starts_at: string;
+  ends_at: string;
+  status: UserAvailabilityStatus;
+}
+
 export interface MapSkeddaBookingsOptions {
   source?: string;
   locationId?: string;

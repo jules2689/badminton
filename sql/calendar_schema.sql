@@ -68,3 +68,25 @@ create index if not exists court_bookings_location_time_idx
 
 create index if not exists court_bookings_court_time_idx
   on court_bookings (court_id, starts_at, ends_at);
+
+create table if not exists app_users (
+  id text primary key,
+  display_name text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists user_availability_windows (
+  id text primary key,
+  user_id text not null references app_users(id) on delete cascade,
+  starts_at timestamp without time zone not null,
+  ends_at timestamp without time zone not null,
+  status text not null default 'available',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (ends_at > starts_at),
+  check (status in ('available', 'maybe', 'unavailable'))
+);
+
+create index if not exists user_availability_windows_user_time_idx
+  on user_availability_windows (user_id, starts_at, ends_at);
