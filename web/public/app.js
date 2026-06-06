@@ -181,11 +181,7 @@ function renderViewModeButtons() {
 
 function updateStatus() {
   const viewLabel =
-    currentViewMode === "overview"
-      ? "Overview"
-      : currentViewMode === "open-times"
-        ? "Open Times"
-        : "Choose your availability";
+    currentViewMode === "overview" ? "Overview" : "Choose your availability";
   setStatus(`${formatWeekRange(currentDates)} · ${viewLabel}`);
 }
 
@@ -208,16 +204,6 @@ function renderWeek(payload) {
 
   if (currentViewMode === "overview") {
     renderOverviewHeatmap({
-      dates,
-      slots,
-      locations,
-      bookingsByLocationAndDate
-    });
-    return;
-  }
-
-  if (currentViewMode === "open-times") {
-    renderOpenTimes({
       dates,
       slots,
       locations,
@@ -325,98 +311,6 @@ function getSlotAvailability({
     totalCourts,
     locationSummaries
   };
-}
-
-function renderOpenTimes({ dates, slots, locations, bookingsByLocationAndDate }) {
-  const view = createNode("div", "open-times-view");
-  let openSlotCount = 0;
-
-  for (const date of dates) {
-    const rows = [];
-
-    for (const slot of slots) {
-      const startMinute = slot.hour * 60 + slot.minute;
-      const endMinute = startMinute + SLOT_MINUTES;
-
-      if (isPastSlot(date, startMinute) || isBlockedTime(date, startMinute)) {
-        continue;
-      }
-
-      const availability = getSlotAvailability({
-        date,
-        startMinute,
-        endMinute,
-        locations,
-        bookingsByLocationAndDate
-      });
-
-      if (availability.totalAvailable <= 0) {
-        continue;
-      }
-
-      rows.push(createOpenTimeRow({ date, startMinute, endMinute, availability }));
-    }
-
-    if (rows.length === 0) {
-      continue;
-    }
-
-    openSlotCount += rows.length;
-
-    const section = createNode("section", "open-day");
-    const heading = createNode("div", "open-day-heading");
-    const headingText = createNode("div", "");
-    headingText.append(createNode("strong", "", formatWeekday(date)));
-    headingText.append(createNode("span", "", formatShortDate(date)));
-    heading.append(headingText);
-    heading.append(createNode("span", "open-day-count", `${rows.length} times`));
-    section.append(heading);
-
-    const list = createNode("div", "open-time-list");
-    list.append(...rows);
-    section.append(list);
-    view.append(section);
-  }
-
-  if (openSlotCount === 0) {
-    elements.calendar.replaceChildren(
-      createNode("div", "empty-state", "No open times in this week.")
-    );
-    return;
-  }
-
-  elements.calendar.replaceChildren(view);
-}
-
-function createOpenTimeRow({ date, startMinute, endMinute, availability }) {
-  const row = createNode("div", `open-time-row availability-${availability.state}`);
-  row.dataset.availabilityLabel = `${availabilityStateLabel(availability.state)}: ${
-    availability.totalAvailable
-  }/${availability.totalCourts} courts at ${formatSlotTime(startMinute)}`;
-  prepareUserAvailabilityCell(row, date, startMinute, endMinute);
-
-  const time = createNode("div", "open-time-time");
-  time.append(createNode("strong", "", formatSlotTime(startMinute)));
-  time.append(createNode("span", "", formatSlotTime(endMinute)));
-
-  const summary = createNode("div", "open-time-summary");
-  summary.append(
-    createNode(
-      "span",
-      `availability-mark availability-mark-${availability.state}`,
-      availabilityStatusIcon(availability.state)
-    )
-  );
-  summary.append(
-    createNode("strong", "", `${availability.totalAvailable}/${availability.totalCourts}`)
-  );
-
-  const locations = createNode("div", "open-time-locations");
-  locations.append(...Array.from(createSlotLocationsElement(availability.locationSummaries).childNodes));
-
-  row.append(time, summary, locations);
-  updateCellTitle(row);
-  return row;
 }
 
 function renderOverviewHeatmap({ dates, slots, locations, bookingsByLocationAndDate }) {
@@ -922,10 +816,6 @@ function normalizeViewMode(value) {
     return "overview";
   }
 
-  if (value === "open-times") {
-    return "open-times";
-  }
-
   return "calendar";
 }
 
@@ -937,8 +827,8 @@ function syncUrl({ replace = false } = {}) {
   const url = new URL(window.location.href);
   url.searchParams.set("date", normalizeUrlDate(elements.dateInput.value));
 
-  if (currentViewMode === "overview" || currentViewMode === "open-times") {
-    url.searchParams.set("view", currentViewMode);
+  if (currentViewMode === "overview") {
+    url.searchParams.set("view", "overview");
   } else {
     url.searchParams.delete("view");
   }
