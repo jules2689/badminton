@@ -25,11 +25,9 @@ const elements = {
 };
 const availabilityBySlot = new Map();
 let currentUser = null;
-let canSaveAvailability = false;
 let currentDates = [];
 let currentPayload = null;
 let groupAvailability = null;
-let groupAvailabilityError = null;
 let currentViewMode = "calendar";
 let saveTimer = null;
 let statusTimer = null;
@@ -316,11 +314,6 @@ function getSlotAvailability({
 }
 
 function renderOverviewHeatmap({ dates, slots, locations, bookingsByLocationAndDate }) {
-  if (groupAvailabilityError) {
-    elements.calendar.replaceChildren(createOverviewEmptyState(groupAvailabilityError));
-    return;
-  }
-
   if (!groupAvailability || groupAvailability.users.length === 0) {
     elements.calendar.replaceChildren(
       createOverviewEmptyState("No one has signed in yet. Overview needs saved availability from your group.")
@@ -889,16 +882,15 @@ async function loadCurrentUser() {
     throw new Error(error.message ?? `Request failed with ${response.status}`);
   }
 
-  const { user, canSaveAvailability: canSave } = await response.json();
+  const { user } = await response.json();
   currentUser = user;
-  canSaveAvailability = Boolean(canSave);
   renderUserState();
 }
 
 async function loadUserAvailability(dates) {
   availabilityBySlot.clear();
 
-  if (!currentUser || !canSaveAvailability || dates.length === 0) {
+  if (dates.length === 0) {
     return;
   }
 
@@ -908,8 +900,7 @@ async function loadUserAvailability(dates) {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    setStatus(error.message ?? "Database required to save availability", "error");
-    return;
+    throw new Error(error.message ?? `Request failed with ${response.status}`);
   }
 
   const { windows } = await response.json();
@@ -923,7 +914,6 @@ async function loadUserAvailability(dates) {
 
 async function loadGroupAvailability(dates) {
   groupAvailability = null;
-  groupAvailabilityError = null;
 
   if (dates.length === 0) {
     return;
@@ -935,20 +925,13 @@ async function loadGroupAvailability(dates) {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    groupAvailabilityError =
-      error.message ?? "Set DATABASE_URL to view group availability in Overview.";
-    return;
+    throw new Error(error.message ?? `Request failed with ${response.status}`);
   }
 
   groupAvailability = await response.json();
 }
 
 function prepareUserAvailabilityCell(cell, date, startMinute, endMinute) {
-  if (!currentUser || !canSaveAvailability) {
-    cell.classList.add("login-required");
-    return;
-  }
-
   const key = slotKey(date, startMinute);
   const status = availabilityBySlot.get(key);
 
@@ -1054,7 +1037,7 @@ function scheduleAvailabilitySave() {
 }
 
 async function saveAvailability() {
-  if (!currentUser || !canSaveAvailability || currentDates.length === 0) {
+  if (currentDates.length === 0) {
     return;
   }
 

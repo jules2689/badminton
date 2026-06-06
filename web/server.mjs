@@ -11,14 +11,25 @@ import {
   fetchVisionBadmintonCalendarRows
 } from "../dist/index.js";
 
+function requireEnv(name) {
+  const value = process.env[name]?.trim();
+
+  if (!value) {
+    throw new Error(`${name} is required.`);
+  }
+
+  return value;
+}
+
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const publicDir = join(__dirname, "public");
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? "127.0.0.1";
 const cache = new Map();
-const db = createCalendarDatabase();
-const basicAuthPassword = process.env.BASIC_AUTH_PASSWORD ?? "";
+const databaseUrl = requireEnv("DATABASE_URL");
+const basicAuthPassword = requireEnv("BASIC_AUTH_PASSWORD");
 const basicAuthRealm = process.env.BASIC_AUTH_REALM ?? "Badminton Calendar";
+const db = createCalendarDatabase(databaseUrl);
 const dbCacheMaxAgeMs = Number(process.env.CALENDAR_DB_CACHE_MAX_AGE_MS ?? 6 * 60 * 60 * 1000);
 const locations = {
   visionbadminton: {
@@ -100,15 +111,13 @@ const server = createServer(async (request, response) => {
 });
 
 async function startServer() {
-  if (db) {
-    await db.checkConnection();
-    console.log("Database connection verified");
+  await db.checkConnection();
+  console.log("Database connection verified");
 
-    const appliedMigrations = await runMigrations();
+  const appliedMigrations = await runMigrations(databaseUrl);
 
-    if (appliedMigrations.length > 0) {
-      console.log(`Applied migrations: ${appliedMigrations.join(", ")}`);
-    }
+  if (appliedMigrations.length > 0) {
+    console.log(`Applied migrations: ${appliedMigrations.join(", ")}`);
   }
 
   server.listen(port, host, () => {
@@ -122,9 +131,7 @@ startServer().catch((error) => {
 });
 
 async function handleBookingsApi(url, response) {
-  const startDate = normalizeDateParam(
-    url.searchParams.get("start") ?? url.searchParams.get("date")
-  );
+  const startDate = normalizeDateParam(url.searchParams.get("start"));
   const days = clamp(Number(url.searchParams.get("days") ?? 7), 1, 14);
   const locationId = url.searchParams.get("location") ?? "all";
   const selectedLocations =
@@ -168,35 +175,12 @@ async function handleBookingsApi(url, response) {
 }
 
 async function handleMeApi(authUser, response) {
-  if (db) {
-    try {
-      const user = await db.upsertUser(authUser.displayName);
+  const user = await db.upsertUser(authUser.displayName);
 
-      sendJson(response, 200, {
-        user,
-        canSaveAvailability: true
-      });
-      return;
-    } catch (error) {
-      console.error(error);
-    }
-  }
-
-  sendJson(response, 200, {
-    user: makeAuthUserRow(authUser),
-    canSaveAvailability: false
-  });
+  sendJson(response, 200, { user });
 }
 
 async function handleReadGroupAvailabilityApi(url, response) {
-  if (!db) {
-    sendJson(response, 503, {
-      error: "database_required",
-      message: "Set DATABASE_URL to read group availability."
-    });
-    return;
-  }
-
   const startDate = maxDateString(
     normalizeDateParam(url.searchParams.get("start")),
     todayDateString()
@@ -212,14 +196,6 @@ async function handleReadGroupAvailabilityApi(url, response) {
 }
 
 async function handleReadAvailabilityApi(authUser, url, response) {
-  if (!db) {
-    sendJson(response, 503, {
-      error: "database_required",
-      message: "Set DATABASE_URL to read availability."
-    });
-    return;
-  }
-
   const user = await db.upsertUser(authUser.displayName);
   const startDate = maxDateString(
     normalizeDateParam(url.searchParams.get("start")),
@@ -240,14 +216,6 @@ async function handleReadAvailabilityApi(authUser, url, response) {
 }
 
 async function handleSaveAvailabilityApi(authUser, request, response) {
-  if (!db) {
-    sendJson(response, 503, {
-      error: "database_required",
-      message: "Set DATABASE_URL to save availability."
-    });
-    return;
-  }
-
   const body = await readJsonBody(request);
   const user = await db.upsertUser(authUser.displayName);
   const startDate = maxDateString(
@@ -338,13 +306,7 @@ async function loadLocationDataset(location, startDate, endDate, days) {
       days
     });
 
-    if (db) {
-      try {
-        await db.saveDataset(dataset);
-      } catch (error) {
-        console.error(error);
-      }
-    }
+    await db.saveDataset(dataset);
 
     return {
       locationId: location.id,
@@ -372,10 +334,6 @@ async function loadLocationDataset(location, startDate, endDate, days) {
 }
 
 async function readLatestDatasetSafely(location, rangeStart, rangeEnd, options = {}) {
-  if (!db) {
-    return null;
-  }
-
   try {
     return await db.readLatestDataset({
       source: location.source,
@@ -405,14 +363,6 @@ async function serveStatic(pathname, response) {
 }
 
 function authenticateRequest(request, response) {
-  if (!basicAuthPassword) {
-    sendJson(response, 500, {
-      error: "auth_password_required",
-      message: "Set BASIC_AUTH_PASSWORD before starting the web server."
-    });
-    return null;
-  }
-
   const header = request.headers.authorization ?? "";
   const match = header.match(/^Basic\s+(.+)$/i);
 
@@ -556,15 +506,6 @@ function clamp(value, min, max) {
 
 function normalizeDisplayName(value) {
   return value.trim().replace(/\s+/g, " ").slice(0, 80);
-}
-
-function makeAuthUserRow(authUser) {
-  const id = makeStableId(["user", authUser.displayName]);
-
-  return {
-    id: id || "user:authenticated",
-    display_name: authUser.displayName
-  };
 }
 
 function constantTimeEqual(left, right) {

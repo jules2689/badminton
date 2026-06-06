@@ -1,2 +1,0 @@
--- Schema is managed through numbered SQL files in sql/migrations/.
--- The web server and `npm run db:migrate` apply pending migrations on startup.

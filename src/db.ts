@@ -72,7 +72,7 @@ export async function runMigrations(
   connectionString = process.env.DATABASE_URL
 ): Promise<string[]> {
   if (!connectionString) {
-    return [];
+    throw new Error("DATABASE_URL is required.");
   }
 
   const pool = new Pool({
@@ -120,18 +120,11 @@ export async function runMigrations(
   return applied;
 }
 
-/** @deprecated Use runMigrations instead. */
-export async function ensureCalendarSchema(
-  connectionString = process.env.DATABASE_URL
-): Promise<void> {
-  await runMigrations(connectionString);
-}
-
 export function createCalendarDatabase(
   connectionString = process.env.DATABASE_URL
-): CalendarDatabase | null {
+): CalendarDatabase {
   if (!connectionString) {
-    return null;
+    throw new Error("DATABASE_URL is required.");
   }
 
   const pool = new Pool({
