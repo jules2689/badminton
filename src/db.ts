@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Pool, type PoolClient } from "pg";
+import pgConnectionString from "pg-connection-string";
+import { Pool, type PoolClient, type PoolConfig } from "pg";
 import type {
   CourtCalendarDataset,
   PostgresAppUserRow,
@@ -79,44 +80,30 @@ export function getPostgresConnectionString(): string {
   return connectionString;
 }
 
-function createPoolConfig(connectionString: string, max: number) {
-  const config: { connectionString: string; max: number; ssl?: { rejectUnauthorized: boolean } } = {
-    connectionString,
-    max
-  };
-  const ssl = resolvePostgresSsl(connectionString);
+function createPoolConfig(connectionString: string, max: number): PoolConfig {
+  const parsed = pgConnectionString.parse(connectionString);
+  const config = pgConnectionString.toClientConfig(parsed) as PoolConfig;
+  config.max = max;
 
-  if (ssl) {
-    config.ssl = ssl;
-  }
-
-  return config;
-}
-
-function resolvePostgresSsl(
-  connectionString: string
-): { rejectUnauthorized: boolean } | undefined {
   if (process.env.PGSSLMODE?.trim().toLowerCase() === "disable") {
-    return undefined;
+    config.ssl = false;
+    return config;
   }
 
-  let hostname = "";
-
-  try {
-    hostname = new URL(connectionString).hostname;
-  } catch {
-    return process.env.PGSSLMODE ? { rejectUnauthorized: false } : undefined;
-  }
-
-  const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
+  const host = parsed.host ?? "";
+  const isLocal =
+    host === "localhost" || host === "127.0.0.1" || host.startsWith("/");
 
   if (isLocal) {
-    return undefined;
+    config.ssl = false;
+    return config;
   }
 
-  return {
+  config.ssl = {
     rejectUnauthorized: process.env.POSTGRES_SSL_REJECT_UNAUTHORIZED?.trim() === "true"
   };
+
+  return config;
 }
 
 export async function runMigrations(
