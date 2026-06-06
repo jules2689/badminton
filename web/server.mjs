@@ -50,6 +50,20 @@ const locations = {
 };
 
 const server = createServer(async (request, response) => {
+  await handleRequest(request, response);
+});
+
+let prepareServerPromise = null;
+
+export function prepareServer() {
+  if (!prepareServerPromise) {
+    prepareServerPromise = bootstrapServer();
+  }
+
+  return prepareServerPromise;
+}
+
+export async function handleRequest(request, response) {
   try {
     const authUser = authenticateRequest(request, response);
 
@@ -109,9 +123,9 @@ const server = createServer(async (request, response) => {
       message: error instanceof Error ? error.message : "Unknown error"
     });
   }
-});
+}
 
-async function startServer() {
+async function bootstrapServer() {
   await db.checkConnection();
   console.log("Database connection verified");
 
@@ -120,16 +134,22 @@ async function startServer() {
   if (appliedMigrations.length > 0) {
     console.log(`Applied migrations: ${appliedMigrations.join(", ")}`);
   }
+}
+
+async function startServer() {
+  await prepareServer();
 
   server.listen(port, host, () => {
     console.log(`Badminton calendar running at http://${host}:${port}`);
   });
 }
 
-startServer().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+if (!process.env.VERCEL) {
+  startServer().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
 
 async function handleBookingsApi(url, response) {
   const startDate = normalizeDateParam(url.searchParams.get("start"));
@@ -176,39 +196,88 @@ async function handleBookingsApi(url, response) {
 }
 
 async function handleMeApi(authUser, response) {
-  const user = await db.upsertUser(authUser.displayName);
+  if (!db) {
+    sendJson(response, 200, { user: makeAuthUserRow(authUser) });
+    return;
+  }
+
+  let user;
+
+  try {
+    user = await db.upsertUser(authUser.displayName);
+  } catch (error) {
+    console.error(error);
+    user = makeAuthUserRow(authUser);
+  }
 
   sendJson(response, 200, { user });
 }
 
 async function handleReadGroupAvailabilityApi(url, response) {
+  if (!db) {
+    sendJson(response, 200, { users: [], windows: [] });
+    return;
+  }
+
   const startDate = maxDateString(
     normalizeDateParam(url.searchParams.get("start")),
     todayDateString()
   );
   const days = clamp(Number(url.searchParams.get("days") ?? 7), 1, 14);
   const endDate = addDaysToDateString(startDate, days - 1);
-  const snapshot = await db.readGroupAvailability({
-    start: `${startDate}T00:00:00`,
-    end: `${endDate}T23:59:59.999`
-  });
+  let snapshot = { users: [], windows: [] };
+
+  try {
+    snapshot = await db.readGroupAvailability({
+      start: `${startDate}T00:00:00`,
+      end: `${endDate}T23:59:59.999`
+    });
+  } catch (error) {
+    console.error(error);
+  }
 
   sendJson(response, 200, snapshot);
 }
 
 async function handleReadAvailabilityApi(authUser, url, response) {
-  const user = await db.upsertUser(authUser.displayName);
+  if (!db) {
+    sendJson(response, 200, {
+      user: makeAuthUserRow(authUser),
+      windows: []
+    });
+    return;
+  }
+
+  let user;
+
+  try {
+    user = await db.upsertUser(authUser.displayName);
+  } catch (error) {
+    console.error(error);
+    sendJson(response, 200, {
+      user: makeAuthUserRow(authUser),
+      windows: []
+    });
+    return;
+  }
+
   const startDate = maxDateString(
     normalizeDateParam(url.searchParams.get("start")),
     todayDateString()
   );
   const days = clamp(Number(url.searchParams.get("days") ?? 7), 1, 14);
   const endDate = addDaysToDateString(startDate, days - 1);
-  const windows = await db.readUserAvailability({
-    userId: user.id,
-    start: `${startDate}T00:00:00`,
-    end: `${endDate}T23:59:59.999`
-  });
+  let windows = [];
+
+  try {
+    windows = await db.readUserAvailability({
+      userId: user.id,
+      start: `${startDate}T00:00:00`,
+      end: `${endDate}T23:59:59.999`
+    });
+  } catch (error) {
+    console.error(error);
+  }
 
   sendJson(response, 200, {
     user,
@@ -217,6 +286,14 @@ async function handleReadAvailabilityApi(authUser, url, response) {
 }
 
 async function handleSaveAvailabilityApi(authUser, request, response) {
+  if (!db) {
+    sendJson(response, 503, {
+      error: "database_required",
+      message: "Set DATABASE_URL to save availability."
+    });
+    return;
+  }
+
   const body = await readJsonBody(request);
   const user = await db.upsertUser(authUser.displayName);
   const startDate = maxDateString(
@@ -507,6 +584,13 @@ function clamp(value, min, max) {
 
 function normalizeDisplayName(value) {
   return value.trim().replace(/\s+/g, " ").slice(0, 80);
+}
+
+function makeAuthUserRow(authUser) {
+  return {
+    id: makeStableId(["user", authUser.displayName]) || "user:authenticated",
+    display_name: authUser.displayName
+  };
 }
 
 function constantTimeEqual(left, right) {

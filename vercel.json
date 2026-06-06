@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run vercel-build",
+  "outputDirectory": "public",
+  "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
+  "functions": {
+    "api/index.mjs": {
+      "maxDuration": 60,
+      "includeFiles": "sql/migrations/**"
+    }
+  }
+}

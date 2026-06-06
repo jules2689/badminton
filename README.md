@@ -121,3 +121,10 @@ The app loads one Sunday-Saturday week at a time, clamping the current week so
 past dates and past time slots are not shown. Slots before 10 AM are blocked,
 Monday-Friday 9 AM-6 PM is blocked, green means at least 50% of courts are
 available, and yellow means fewer than 50% are available.
+
+## Deploy on Vercel
+
+Set `POSTGRES_URL` (or `DATABASE_URL`) and `BASIC_AUTH_PASSWORD` in the project
+environment. Vercel runs `npm run vercel-build`, which compiles TypeScript and
+copies static assets into `public/`. All requests are routed through a serverless
+function so HTTP Basic Auth applies to the UI and API.

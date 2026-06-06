@@ -17,7 +17,7 @@ const elements = {
   dateInput: document.querySelector("#dateInput"),
   previousWeek: document.querySelector("#previousWeek"),
   nextWeek: document.querySelector("#nextWeek"),
-  viewModeButtons: Array.from(document.querySelectorAll("[data-view-mode]")),
+  viewModeButtons: Array.from(document.querySelectorAll("button[data-view-mode]")),
   refreshButton: document.querySelector("#refreshButton"),
   legendCalendar: document.querySelector(".legend-calendar"),
   legendOverview: document.querySelector(".legend-overview"),

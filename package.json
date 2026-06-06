@@ -19,6 +19,7 @@
     "db:migrate": "npm run build && node scripts/migrate.mjs",
     "dev": "npm run build && node web/server.mjs",
     "start": "node web/server.mjs",
+    "vercel-build": "npm run build && node scripts/prepare-vercel-public.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
