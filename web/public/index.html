@@ -46,6 +46,10 @@
 
       <section class="calendar-panel" aria-label="Court booking calendar">
         <div id="status" class="status" role="status">Loading bookings</div>
+        <div id="loadingOverlay" class="loading-overlay" aria-hidden="true">
+          <div class="loading-spinner"></div>
+          <span>Refreshing</span>
+        </div>
         <div class="calendar-scroll">
           <div id="calendar" class="calendar" aria-live="polite"></div>
         </div>

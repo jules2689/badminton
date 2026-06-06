@@ -16,6 +16,7 @@ const DEFAULT_TIMEZONE = "America/Toronto";
 const DEFAULT_TOTAL_COURTS = 14;
 const SLOT_MINUTES = 30;
 const SLOTS_PER_DAY = 48;
+let hymusAuthTokenCache: { token: string; expiresAt: number } | null = null;
 
 type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
@@ -71,6 +72,16 @@ export class HymusRequestError extends Error {
 export async function fetchHymusAuthToken(
   options: FetchHymusOptions = {}
 ): Promise<string> {
+  const token = process.env.HYMUS_TOKEN;
+
+  if (token) {
+    return token;
+  }
+
+  if (hymusAuthTokenCache && hymusAuthTokenCache.expiresAt > Date.now() + 60_000) {
+    return hymusAuthTokenCache.token;
+  }
+
   const fetchImpl = getFetch(options.fetch);
   const response = await fetchImpl(new URL("/auth", normalizeApiBaseUrl(options.apiBaseUrl)));
   const body = await response.text();
@@ -84,6 +95,11 @@ export async function fetchHymusAuthToken(
   if (typeof parsed !== "string" || !parsed) {
     throw new Error("Hymus auth response did not include a token string.");
   }
+
+  hymusAuthTokenCache = {
+    token: parsed,
+    expiresAt: getJwtExpiryMs(parsed) ?? Date.now() + 55 * 60 * 1000
+  };
 
   return parsed;
 }
@@ -338,6 +354,24 @@ function daysBetween(start: string, end: string): number {
 
 function toIsoString(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;
+}
+
+function getJwtExpiryMs(token: string): number | null {
+  const payload = token.split(".")[1];
+
+  if (!payload) {
+    return null;
+  }
+
+  try {
+    const json = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
+      exp?: unknown;
+    };
+
+    return typeof json.exp === "number" ? json.exp * 1000 : null;
+  } catch {
+    return null;
+  }
 }
 
 function makeStableId(parts: Array<string | number | null | undefined>): string {

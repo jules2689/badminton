@@ -2,22 +2,32 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
-import { fetchHymusCalendarRows, fetchVisionBadmintonCalendarRows } from "../dist/index.js";
+import {
+  createCalendarDatabase,
+  fetchHymusCalendarRows,
+  fetchVisionBadmintonCalendarRows
+} from "../dist/index.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const publicDir = join(__dirname, "public");
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? "127.0.0.1";
 const cache = new Map();
+const db = createCalendarDatabase();
+const dbCacheMaxAgeMs = Number(process.env.CALENDAR_DB_CACHE_MAX_AGE_MS ?? 6 * 60 * 60 * 1000);
 const locations = {
   visionbadminton: {
     id: "visionbadminton",
     label: "Vision Badminton Centre",
+    source: "skedda",
+    datasetLocationId: "skedda:visionbadminton",
     fetchRows: fetchVisionBadmintonCalendarRows
   },
   hymus: {
     id: "hymus",
     label: "Hymus Sports",
+    source: "hymus",
+    datasetLocationId: "hymus:hymus-sports",
     fetchRows: fetchHymusCalendarRows
   }
 };
@@ -89,17 +99,12 @@ async function handleBookingsApi(url, response) {
   const datasets =
     fetchDays > 0
       ? await Promise.all(
-          selectedLocations.map(async (location) => ({
-            locationId: location.id,
-            dataset: await location.fetchRows({
-              start: `${fetchStartDate}T00:00:00`,
-              end: `${endDate}T23:59:59.999`,
-              days: fetchDays
-            })
-          }))
+          selectedLocations.map((location) =>
+            loadLocationDataset(location, fetchStartDate, endDate, fetchDays)
+          )
         )
       : [];
-  const payload = toCalendarPayload(datasets, startDate, days);
+  const payload = toCalendarPayload(datasets, fetchStartDate, fetchDays);
 
   cache.set(cacheKey, {
     createdAt: Date.now(),
@@ -109,29 +114,33 @@ async function handleBookingsApi(url, response) {
 }
 
 function toCalendarPayload(datasets, startDate, days) {
-  const dates = Array.from({ length: days }, (_, index) => addDaysToDateString(startDate, index));
+  const dates =
+    days > 0
+      ? Array.from({ length: days }, (_, index) => addDaysToDateString(startDate, index))
+      : [];
 
   return {
     date: startDate,
     dates,
     availableLocations: Object.values(locations).map(({ id, label }) => ({ id, label })),
-    locations: datasets.map(({ locationId, dataset }) => ({
+    locations: datasets.map(({ locationId, dataset, error }) => ({
       id: locationId,
-      label: locations[locationId]?.label ?? dataset.location.name,
-      location: dataset.location,
+      label: locations[locationId]?.label ?? dataset?.location.name ?? locationId,
+      error: error ?? null,
+      location: dataset?.location ?? null,
       range: {
-        start: dataset.import_batch.range_start_at,
-        end: dataset.import_batch.range_end_at,
-        fetched_at: dataset.import_batch.fetched_at
+        start: dataset?.import_batch.range_start_at ?? startDate,
+        end: dataset?.import_batch.range_end_at ?? addDaysToDateString(startDate, days - 1),
+        fetched_at: dataset?.import_batch.fetched_at ?? new Date().toISOString()
       },
-      courts: dataset.courts.map((court) => ({
+      courts: (dataset?.courts ?? []).map((court) => ({
         id: court.id,
         source_court_id: court.source_court_id,
         name: court.name,
         court_number: court.court_number,
         active: court.active
       })),
-      bookings: dataset.bookings.map((booking) => ({
+      bookings: (dataset?.bookings ?? []).map((booking) => ({
         id: booking.id,
         court_id: booking.court_id,
         starts_at: booking.starts_at,
@@ -140,6 +149,69 @@ function toCalendarPayload(datasets, startDate, days) {
       }))
     }))
   };
+}
+
+async function loadLocationDataset(location, startDate, endDate, days) {
+  const rangeStart = `${startDate}T00:00:00`;
+  const rangeEnd = `${endDate}T23:59:59.999`;
+  const cachedDataset = db
+    ? await db.readLatestDataset({
+        source: location.source,
+        locationId: location.datasetLocationId,
+        start: rangeStart,
+        end: rangeEnd,
+        maxAgeMs: dbCacheMaxAgeMs
+      })
+    : null;
+
+  if (cachedDataset) {
+    return {
+      locationId: location.id,
+      dataset: cachedDataset
+    };
+  }
+
+  try {
+    const dataset = await location.fetchRows({
+      start: rangeStart,
+      end: rangeEnd,
+      days
+    });
+
+    if (db) {
+      await db.saveDataset(dataset);
+    }
+
+    return {
+      locationId: location.id,
+      dataset
+    };
+  } catch (error) {
+    console.error(error);
+
+    const staleDataset = db
+      ? await db.readLatestDataset({
+          source: location.source,
+          locationId: location.datasetLocationId,
+          start: rangeStart,
+          end: rangeEnd
+        })
+      : null;
+
+    if (staleDataset) {
+      return {
+        locationId: location.id,
+        dataset: staleDataset,
+        error: "using_stale_cache"
+      };
+    }
+
+    return {
+      locationId: location.id,
+      dataset: null,
+      error: error instanceof Error ? error.message : "provider_unavailable"
+    };
+  }
 }
 
 async function serveStatic(pathname, response) {

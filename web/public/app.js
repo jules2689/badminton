@@ -9,6 +9,7 @@ const BUSINESS_END_MINUTE = 18 * 60;
 const elements = {
   calendar: document.querySelector("#calendar"),
   status: document.querySelector("#status"),
+  loadingOverlay: document.querySelector("#loadingOverlay"),
   dateInput: document.querySelector("#dateInput"),
   previousWeek: document.querySelector("#previousWeek"),
   nextWeek: document.querySelector("#nextWeek"),
@@ -18,12 +19,13 @@ const elements = {
   fetchedAt: document.querySelector("#fetchedAt")
 };
 
-elements.dateInput.value = startOfWeek(toDateInputValue(new Date()));
+elements.dateInput.min = todayDateString();
+elements.dateInput.value = todayDateString();
 elements.previousWeek.addEventListener("click", () => shiftWeek(-1));
 elements.nextWeek.addEventListener("click", () => shiftWeek(1));
 elements.refreshButton.addEventListener("click", () => loadWeek());
 elements.dateInput.addEventListener("change", () => {
-  elements.dateInput.value = startOfWeek(elements.dateInput.value);
+  elements.dateInput.value = maxDateString(elements.dateInput.value, todayDateString());
   loadWeek();
 });
 
@@ -31,6 +33,7 @@ loadWeek();
 
 async function loadWeek() {
   setStatus("Loading availability");
+  setLoading(true);
 
   try {
     const start = elements.dateInput.value;
@@ -47,14 +50,16 @@ async function loadWeek() {
     console.error(error);
     setStatus(error instanceof Error ? error.message : "Unable to load availability", "error");
     elements.calendar.replaceChildren();
+  } finally {
+    setLoading(false);
   }
 }
 
 function renderWeek(payload) {
-  const dates = payload.dates;
+  const dates = (payload.dates ?? []).filter((date) => date >= todayDateString());
   const locations = payload.locations ?? [];
   const courtCount = locations.reduce((total, location) => total + location.courts.length, 0);
-  const slots = buildSlots();
+  const slots = buildSlots(dates);
   const bookingsByLocationAndDate = new Map(
     locations.map((location) => [
       location.id,
@@ -74,6 +79,12 @@ function renderWeek(payload) {
   );
   elements.calendar.style.setProperty("--day-count", String(dates.length));
   elements.calendar.style.setProperty("--slot-height", `${SLOT_HEIGHT}px`);
+
+  if (dates.length === 0) {
+    elements.openSlotCount.textContent = "0";
+    elements.calendar.replaceChildren(createNode("div", "empty-state", "No upcoming dates in this range."));
+    return;
+  }
 
   const heading = createNode("div", "week-headings");
   heading.append(createNode("div", "time-corner"));
@@ -114,6 +125,13 @@ function createAvailabilityCell({ date, slot, locations, bookingsByLocationAndDa
   const startMinute = slot.hour * 60 + slot.minute;
   const endMinute = startMinute + SLOT_MINUTES;
   const cell = createNode("div", "availability-cell");
+
+  if (isPastSlot(date, startMinute)) {
+    cell.classList.add("past-slot");
+    cell.dataset.openCount = "0";
+    cell.setAttribute("aria-hidden", "true");
+    return cell;
+  }
 
   if (isBlockedTime(date, startMinute)) {
     cell.classList.add("business-hours");
@@ -165,11 +183,17 @@ function createAvailabilityCell({ date, slot, locations, bookingsByLocationAndDa
   return cell;
 }
 
-function buildSlots() {
+function buildSlots(dates) {
   const slots = [];
 
   for (let hour = START_HOUR; hour < END_HOUR; hour += 1) {
     for (let minute = 0; minute < 60; minute += SLOT_MINUTES) {
+      const startMinute = hour * 60 + minute;
+
+      if (dates.length === 0 || dates.every((date) => isPastSlot(date, startMinute))) {
+        continue;
+      }
+
       slots.push({ hour, minute });
     }
   }
@@ -180,13 +204,22 @@ function buildSlots() {
 function shiftWeek(delta) {
   const nextDate = parseDateInputValue(elements.dateInput.value);
   nextDate.setDate(nextDate.getDate() + delta * 7);
-  elements.dateInput.value = toDateInputValue(nextDate);
+  elements.dateInput.value = maxDateString(toDateInputValue(nextDate), todayDateString());
   loadWeek();
 }
 
 function setStatus(message, state = "") {
   elements.status.textContent = message;
   elements.status.dataset.state = state;
+}
+
+function setLoading(isLoading) {
+  elements.loadingOverlay.dataset.active = String(isLoading);
+  elements.loadingOverlay.setAttribute("aria-hidden", String(!isLoading));
+  elements.refreshButton.disabled = isLoading;
+  elements.previousWeek.disabled = isLoading;
+  elements.nextWeek.disabled = isLoading;
+  elements.dateInput.disabled = isLoading;
 }
 
 function overlapsDate(booking, date) {
@@ -201,6 +234,20 @@ function isBlockedTime(date, startMinute) {
   const day = parseDateInputValue(date).getDay();
   const isWeekday = day >= 1 && day <= 5;
   return isWeekday && startMinute >= BUSINESS_START_MINUTE && startMinute < BUSINESS_END_MINUTE;
+}
+
+function isPastSlot(date, startMinute) {
+  const today = todayDateString();
+
+  if (date < today) {
+    return true;
+  }
+
+  if (date > today) {
+    return false;
+  }
+
+  return startMinute < currentSlotCutoffMinute();
 }
 
 function minutesSinceDayStart(value, date) {
@@ -237,19 +284,25 @@ function createNode(tagName, className = "", text = "") {
   return node;
 }
 
-function startOfWeek(value) {
-  const date = parseDateInputValue(value);
-  const day = date.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  date.setDate(date.getDate() + diff);
-  return toDateInputValue(date);
-}
-
 function toDateInputValue(value) {
   const year = value.getFullYear();
   const month = String(value.getMonth() + 1).padStart(2, "0");
   const day = String(value.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function todayDateString() {
+  return toDateInputValue(new Date());
+}
+
+function maxDateString(left, right) {
+  return left >= right ? left : right;
+}
+
+function currentSlotCutoffMinute() {
+  const now = new Date();
+  const minute = now.getHours() * 60 + now.getMinutes() + (now.getSeconds() > 0 ? 1 : 0);
+  return Math.min(END_HOUR * 60, Math.ceil(minute / SLOT_MINUTES) * SLOT_MINUTES);
 }
 
 function parseDateInputValue(value) {
@@ -258,6 +311,10 @@ function parseDateInputValue(value) {
 }
 
 function formatWeekRange(dates) {
+  if (!dates?.length) {
+    return "No upcoming dates";
+  }
+
   return `${formatShortDate(dates[0])} - ${formatShortDate(dates.at(-1))}`;
 }
 

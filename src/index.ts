@@ -8,6 +8,7 @@ import {
 
 export * from "./models.js";
 export * from "./hymus.js";
+export * from "./db.js";
 
 const DEFAULT_BASE_URL = "https://visionbadminton.skedda.com";
 const DEFAULT_BOOTSTRAP_PATH = "/booking";
