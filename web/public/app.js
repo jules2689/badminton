@@ -29,7 +29,7 @@ let currentDates = [];
 let currentPayload = null;
 let groupAvailability = null;
 let currentViewMode = "calendar";
-let saveTimer = null;
+let saveChain = Promise.resolve();
 let statusTimer = null;
 const dragSelection = {
   active: false,
@@ -848,15 +848,21 @@ function getSelectedWeekRequest() {
 function setStatus(message, state = "") {
   window.clearTimeout(statusTimer);
   statusTimer = null;
+  elements.status.classList.remove("status-fading");
   elements.status.textContent = message;
   elements.status.dataset.state = state;
 }
 
 function showSavedStatus() {
-  setStatus(`${formatWeekRange(currentDates)} · saved`);
+  setStatus(`${formatWeekRange(currentDates)} · Saved`, "saved");
+
   statusTimer = window.setTimeout(() => {
-    setStatus(formatWeekRange(currentDates));
-    statusTimer = null;
+    elements.status.classList.add("status-fading");
+    statusTimer = window.setTimeout(() => {
+      updateStatus();
+      elements.status.classList.remove("status-fading");
+      statusTimer = null;
+    }, 350);
   }, 2000);
 }
 
@@ -995,10 +1001,15 @@ function endDragPaint() {
     return;
   }
 
+  const shouldSave = dragSelection.paintedKeys.size > 0;
   dragSelection.active = false;
   dragSelection.paintStatus = null;
   dragSelection.paintedKeys.clear();
   document.body.classList.remove("availability-dragging");
+
+  if (shouldSave) {
+    flushAvailabilitySave();
+  }
 }
 
 function setUserAvailability(key, cell, status) {
@@ -1018,27 +1029,32 @@ function setUserAvailability(key, cell, status) {
       status
     )
   );
-  scheduleAvailabilitySave();
+
+  if (!dragSelection.active) {
+    flushAvailabilitySave();
+  }
 }
 
 function toggleUserAvailability(key, cell) {
   setUserAvailability(key, cell, nextAvailabilityStatus(availabilityBySlot.get(key)));
 }
 
-function scheduleAvailabilitySave() {
-  window.clearTimeout(saveTimer);
-  saveTimer = window.setTimeout(() => {
-    saveAvailability().catch((error) => {
+function flushAvailabilitySave() {
+  saveChain = saveChain
+    .then(() => saveAvailability())
+    .catch((error) => {
       console.error(error);
       setStatus(error instanceof Error ? error.message : "Unable to save availability", "error");
     });
-  }, 350);
+  return saveChain;
 }
 
 async function saveAvailability() {
   if (currentDates.length === 0) {
     return;
   }
+
+  setStatus("Saving availability");
 
   const windows = Array.from(availabilityBySlot.entries()).map(([key, status]) => {
     const [date, minuteText] = key.split("|");

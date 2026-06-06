@@ -317,6 +317,11 @@ h1 {
   color: var(--muted);
   font-family: ui-sans-serif, "Gill Sans", "Trebuchet MS", sans-serif;
   font-size: 14px;
+  transition: opacity 0.35s ease;
+}
+
+.status.status-fading {
+  opacity: 0;
 }
 
 .status-action {
@@ -476,6 +481,11 @@ h1 {
 .status[data-state="error"] {
   color: var(--error);
   background: var(--error-bg);
+}
+
+.status[data-state="saved"] {
+  color: var(--court);
+  font-weight: 700;
 }
 
 .calendar-scroll {
