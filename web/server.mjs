@@ -1,9 +1,12 @@
+import "dotenv/config";
 import { createServer } from "node:http";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   createCalendarDatabase,
+  runMigrations,
   fetchHymusCalendarRows,
   fetchVisionBadmintonCalendarRows
 } from "../dist/index.js";
@@ -14,6 +17,8 @@ const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? "127.0.0.1";
 const cache = new Map();
 const db = createCalendarDatabase();
+const basicAuthPassword = process.env.BASIC_AUTH_PASSWORD ?? "";
+const basicAuthRealm = process.env.BASIC_AUTH_REALM ?? "Badminton Calendar";
 const dbCacheMaxAgeMs = Number(process.env.CALENDAR_DB_CACHE_MAX_AGE_MS ?? 6 * 60 * 60 * 1000);
 const locations = {
   visionbadminton: {
@@ -34,6 +39,12 @@ const locations = {
 
 const server = createServer(async (request, response) => {
   try {
+    const authUser = authenticateRequest(request, response);
+
+    if (!authUser) {
+      return;
+    }
+
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
 
     if (url.pathname === "/api/bookings") {
@@ -43,6 +54,31 @@ const server = createServer(async (request, response) => {
 
     if (url.pathname === "/api/locations") {
       sendJson(response, 200, Object.values(locations).map(({ id, label }) => ({ id, label })));
+      return;
+    }
+
+    if (url.pathname === "/logout" || url.pathname === "/api/logout") {
+      sendBasicAuthChallenge(response, "Logged out");
+      return;
+    }
+
+    if (url.pathname === "/api/me") {
+      await handleMeApi(authUser, response);
+      return;
+    }
+
+    if (url.pathname === "/api/availability/group" && request.method === "GET") {
+      await handleReadGroupAvailabilityApi(url, response);
+      return;
+    }
+
+    if (url.pathname === "/api/availability" && request.method === "GET") {
+      await handleReadAvailabilityApi(authUser, url, response);
+      return;
+    }
+
+    if (url.pathname === "/api/availability" && request.method === "PUT") {
+      await handleSaveAvailabilityApi(authUser, request, response);
       return;
     }
 
@@ -63,8 +99,26 @@ const server = createServer(async (request, response) => {
   }
 });
 
-server.listen(port, host, () => {
-  console.log(`Badminton calendar running at http://${host}:${port}`);
+async function startServer() {
+  if (db) {
+    await db.checkConnection();
+    console.log("Database connection verified");
+
+    const appliedMigrations = await runMigrations();
+
+    if (appliedMigrations.length > 0) {
+      console.log(`Applied migrations: ${appliedMigrations.join(", ")}`);
+    }
+  }
+
+  server.listen(port, host, () => {
+    console.log(`Badminton calendar running at http://${host}:${port}`);
+  });
+}
+
+startServer().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
 });
 
 async function handleBookingsApi(url, response) {
@@ -104,13 +158,125 @@ async function handleBookingsApi(url, response) {
           )
         )
       : [];
-  const payload = toCalendarPayload(datasets, fetchStartDate, fetchDays);
+  const payload = toCalendarPayload(datasets, startDate, days);
 
   cache.set(cacheKey, {
     createdAt: Date.now(),
     payload
   });
   sendJson(response, 200, payload);
+}
+
+async function handleMeApi(authUser, response) {
+  if (db) {
+    try {
+      const user = await db.upsertUser(authUser.displayName);
+
+      sendJson(response, 200, {
+        user,
+        canSaveAvailability: true
+      });
+      return;
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  sendJson(response, 200, {
+    user: makeAuthUserRow(authUser),
+    canSaveAvailability: false
+  });
+}
+
+async function handleReadGroupAvailabilityApi(url, response) {
+  if (!db) {
+    sendJson(response, 503, {
+      error: "database_required",
+      message: "Set DATABASE_URL to read group availability."
+    });
+    return;
+  }
+
+  const startDate = maxDateString(
+    normalizeDateParam(url.searchParams.get("start")),
+    todayDateString()
+  );
+  const days = clamp(Number(url.searchParams.get("days") ?? 7), 1, 14);
+  const endDate = addDaysToDateString(startDate, days - 1);
+  const snapshot = await db.readGroupAvailability({
+    start: `${startDate}T00:00:00`,
+    end: `${endDate}T23:59:59.999`
+  });
+
+  sendJson(response, 200, snapshot);
+}
+
+async function handleReadAvailabilityApi(authUser, url, response) {
+  if (!db) {
+    sendJson(response, 503, {
+      error: "database_required",
+      message: "Set DATABASE_URL to read availability."
+    });
+    return;
+  }
+
+  const user = await db.upsertUser(authUser.displayName);
+  const startDate = maxDateString(
+    normalizeDateParam(url.searchParams.get("start")),
+    todayDateString()
+  );
+  const days = clamp(Number(url.searchParams.get("days") ?? 7), 1, 14);
+  const endDate = addDaysToDateString(startDate, days - 1);
+  const windows = await db.readUserAvailability({
+    userId: user.id,
+    start: `${startDate}T00:00:00`,
+    end: `${endDate}T23:59:59.999`
+  });
+
+  sendJson(response, 200, {
+    user,
+    windows
+  });
+}
+
+async function handleSaveAvailabilityApi(authUser, request, response) {
+  if (!db) {
+    sendJson(response, 503, {
+      error: "database_required",
+      message: "Set DATABASE_URL to save availability."
+    });
+    return;
+  }
+
+  const body = await readJsonBody(request);
+  const user = await db.upsertUser(authUser.displayName);
+  const startDate = maxDateString(
+    normalizeDateParam(typeof body.start === "string" ? body.start : undefined),
+    todayDateString()
+  );
+  const days = clamp(Number(body.days ?? 7), 1, 14);
+  const endDate = addDaysToDateString(startDate, days - 1);
+  const rangeStart = `${startDate}T00:00:00`;
+  const rangeEnd = `${endDate}T23:59:59.999`;
+
+  const windows = Array.isArray(body.windows)
+    ? body.windows
+        .map((window) => normalizeAvailabilityWindow(user.id, window))
+        .filter(Boolean)
+        .filter((window) => window.starts_at >= rangeStart && window.starts_at <= `${endDate}T23:59:59.999`)
+    : [];
+
+  await db.replaceUserAvailability({
+    userId: user.id,
+    start: rangeStart,
+    end: rangeEnd,
+    windows
+  });
+
+  sendJson(response, 200, {
+    user,
+    windows
+  });
 }
 
 function toCalendarPayload(datasets, startDate, days) {
@@ -154,15 +320,9 @@ function toCalendarPayload(datasets, startDate, days) {
 async function loadLocationDataset(location, startDate, endDate, days) {
   const rangeStart = `${startDate}T00:00:00`;
   const rangeEnd = `${endDate}T23:59:59.999`;
-  const cachedDataset = db
-    ? await db.readLatestDataset({
-        source: location.source,
-        locationId: location.datasetLocationId,
-        start: rangeStart,
-        end: rangeEnd,
-        maxAgeMs: dbCacheMaxAgeMs
-      })
-    : null;
+  const cachedDataset = await readLatestDatasetSafely(location, rangeStart, rangeEnd, {
+    maxAgeMs: dbCacheMaxAgeMs
+  });
 
   if (cachedDataset) {
     return {
@@ -179,7 +339,11 @@ async function loadLocationDataset(location, startDate, endDate, days) {
     });
 
     if (db) {
-      await db.saveDataset(dataset);
+      try {
+        await db.saveDataset(dataset);
+      } catch (error) {
+        console.error(error);
+      }
     }
 
     return {
@@ -189,14 +353,7 @@ async function loadLocationDataset(location, startDate, endDate, days) {
   } catch (error) {
     console.error(error);
 
-    const staleDataset = db
-      ? await db.readLatestDataset({
-          source: location.source,
-          locationId: location.datasetLocationId,
-          start: rangeStart,
-          end: rangeEnd
-        })
-      : null;
+    const staleDataset = await readLatestDatasetSafely(location, rangeStart, rangeEnd);
 
     if (staleDataset) {
       return {
@@ -214,6 +371,25 @@ async function loadLocationDataset(location, startDate, endDate, days) {
   }
 }
 
+async function readLatestDatasetSafely(location, rangeStart, rangeEnd, options = {}) {
+  if (!db) {
+    return null;
+  }
+
+  try {
+    return await db.readLatestDataset({
+      source: location.source,
+      locationId: location.datasetLocationId,
+      start: rangeStart,
+      end: rangeEnd,
+      maxAgeMs: options.maxAgeMs
+    });
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
+}
+
 async function serveStatic(pathname, response) {
   const relativePath = pathname === "/" ? "index.html" : pathname.slice(1);
   const safePath = normalize(relativePath).replace(/^(\.\.(\/|\\|$))+/, "");
@@ -226,6 +402,104 @@ async function serveStatic(pathname, response) {
     "cache-control": "no-cache"
   });
   response.end(body);
+}
+
+function authenticateRequest(request, response) {
+  if (!basicAuthPassword) {
+    sendJson(response, 500, {
+      error: "auth_password_required",
+      message: "Set BASIC_AUTH_PASSWORD before starting the web server."
+    });
+    return null;
+  }
+
+  const header = request.headers.authorization ?? "";
+  const match = header.match(/^Basic\s+(.+)$/i);
+
+  if (!match) {
+    sendBasicAuthChallenge(response);
+    return null;
+  }
+
+  const decoded = Buffer.from(match[1], "base64").toString("utf8");
+  const separatorIndex = decoded.indexOf(":");
+
+  if (separatorIndex < 0) {
+    sendBasicAuthChallenge(response);
+    return null;
+  }
+
+  const displayName = normalizeDisplayName(decoded.slice(0, separatorIndex));
+  const password = decoded.slice(separatorIndex + 1);
+
+  if (!displayName || !constantTimeEqual(password, basicAuthPassword)) {
+    sendBasicAuthChallenge(response);
+    return null;
+  }
+
+  return {
+    displayName
+  };
+}
+
+function sendBasicAuthChallenge(response, message = "Authentication required") {
+  response.writeHead(401, {
+    "www-authenticate": `Basic realm="${basicAuthRealm.replace(/"/g, "")}", charset="UTF-8"`,
+    "content-type": "text/plain; charset=utf-8",
+    "cache-control": "no-cache"
+  });
+  response.end(message);
+}
+
+async function readJsonBody(request) {
+  const chunks = [];
+
+  for await (const chunk of request) {
+    chunks.push(chunk);
+  }
+
+  if (chunks.length === 0) {
+    return {};
+  }
+
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+function normalizeAvailabilityWindow(userId, value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const startsAt = typeof value.starts_at === "string" ? value.starts_at : "";
+  const endsAt = typeof value.ends_at === "string" ? value.ends_at : "";
+  const status = typeof value.status === "string" ? value.status : "available";
+
+  if (!isLocalDateTime(startsAt) || !isLocalDateTime(endsAt)) {
+    return null;
+  }
+
+  if (!["available", "maybe", "unavailable"].includes(status)) {
+    return null;
+  }
+
+  if (endsAt <= startsAt) {
+    return null;
+  }
+
+  return {
+    id:
+      typeof value.id === "string" && value.id
+        ? value.id
+        : `availability:${makeStableId([userId, startsAt, endsAt]) || randomUUID()}`,
+    user_id: userId,
+    starts_at: startsAt,
+    ends_at: endsAt,
+    status
+  };
+}
+
+function isLocalDateTime(value) {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?$/.test(value);
 }
 
 function normalizeDateParam(value) {
@@ -278,6 +552,40 @@ function clamp(value, min, max) {
   }
 
   return Math.min(max, Math.max(min, value));
+}
+
+function normalizeDisplayName(value) {
+  return value.trim().replace(/\s+/g, " ").slice(0, 80);
+}
+
+function makeAuthUserRow(authUser) {
+  const id = makeStableId(["user", authUser.displayName]);
+
+  return {
+    id: id || "user:authenticated",
+    display_name: authUser.displayName
+  };
+}
+
+function constantTimeEqual(left, right) {
+  const leftDigest = createHash("sha256").update(left).digest();
+  const rightDigest = createHash("sha256").update(right).digest();
+
+  return timingSafeEqual(leftDigest, rightDigest);
+}
+
+function makeStableId(parts) {
+  return parts
+    .filter((part) => part !== null && part !== undefined && part !== "")
+    .map((part) =>
+      String(part)
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9._:-]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+    )
+    .filter(Boolean)
+    .join(":");
 }
 
 function sendJson(response, status, payload) {

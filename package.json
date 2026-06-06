@@ -16,6 +16,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "db:migrate": "npm run build && node scripts/migrate.mjs",
     "dev": "npm run build && node web/server.mjs",
     "start": "node web/server.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
@@ -29,6 +30,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "dotenv": "^17.4.2",
     "pg": "^8.21.0"
   }
 }

@@ -94,18 +94,33 @@ Hymus returns availability slots instead of bookings. The adapter gets a bearer
 token from `/auth`, fetches `/bookings/:date/slots`, then inverts unavailable
 courts into synthetic busy intervals.
 
-The matching Postgres schema is in `sql/calendar_schema.sql`.
+The matching Postgres schema lives in `sql/migrations/`.
 
 ## Web Calendar
 
 Run the local calendar webapp:
 
 ```bash
-npm run dev
+BASIC_AUTH_PASSWORD="shared-password" npm run dev
 ```
 
-Open `http://localhost:3000`. The app loads one Monday-Sunday week at a time and
-aggregates bookings into 30-minute availability slots. Slots before 10 AM are
-blocked, Monday-Friday 9 AM-6 PM is blocked, green means at least 50% of courts
-are available, and yellow means fewer than 50% are available. Use the location
-selector to switch between Vision Badminton and Hymus Sports.
+Open `http://localhost:3000`. The browser will ask for HTTP Basic Auth. Use any
+username; that username becomes the display name for saved availability. The
+same `BASIC_AUTH_PASSWORD` value is accepted for every user.
+
+Set `DATABASE_URL` to persist booking cache, users, and user availability. The
+web server runs pending SQL migrations from `sql/migrations/` automatically on
+startup. Add new numbered files such as `002_add_foo.sql` when the schema
+changes:
+
+```bash
+DATABASE_URL="postgres://..." BASIC_AUTH_PASSWORD="shared-password" npm run dev
+npm run db:migrate
+```
+
+The app loads one Sunday-Saturday week at a time, clamping the current week so
+past dates and past time slots are not shown. Slots before 10 AM are blocked,
+Monday-Friday 9 AM-6 PM is blocked, green means at least 50% of courts are
+available, and yellow means fewer than 50% are available.
+
+Without `BASIC_AUTH_PASSWORD`, the web server refuses requests.

@@ -1,16 +1,39 @@
+import { createHash } from "node:crypto";
+import { readdir, readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Pool, type PoolClient } from "pg";
 import type {
   CourtCalendarDataset,
+  PostgresAppUserRow,
   PostgresBookingImportBatchRow,
   PostgresCourtBookingRow,
   PostgresCourtRow,
-  PostgresLocationRow
+  PostgresLocationRow,
+  PostgresUserAvailabilityWindowRow
 } from "./models.js";
 
+export interface ReadGroupAvailabilityInput {
+  start: string;
+  end: string;
+}
+
+export interface GroupAvailabilitySnapshot {
+  users: PostgresAppUserRow[];
+  windows: PostgresUserAvailabilityWindowRow[];
+}
+
 export interface CalendarDatabase {
+  checkConnection(): Promise<void>;
   close(): Promise<void>;
   readLatestDataset(input: ReadLatestDatasetInput): Promise<CourtCalendarDataset | null>;
+  readGroupAvailability(input: ReadGroupAvailabilityInput): Promise<GroupAvailabilitySnapshot>;
+  readUserAvailability(
+    input: ReadUserAvailabilityInput
+  ): Promise<PostgresUserAvailabilityWindowRow[]>;
   saveDataset(dataset: CourtCalendarDataset): Promise<void>;
+  replaceUserAvailability(input: ReplaceUserAvailabilityInput): Promise<void>;
+  upsertUser(displayName: string): Promise<PostgresAppUserRow>;
 }
 
 export interface ReadLatestDatasetInput {
@@ -19,6 +42,89 @@ export interface ReadLatestDatasetInput {
   start: string;
   end: string;
   maxAgeMs?: number;
+}
+
+export interface ReadUserAvailabilityInput {
+  userId: string;
+  start: string;
+  end: string;
+}
+
+export interface ReplaceUserAvailabilityInput extends ReadUserAvailabilityInput {
+  windows: PostgresUserAvailabilityWindowRow[];
+}
+
+const migrationsDir = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "sql",
+  "migrations"
+);
+
+const schemaMigrationsSql = `
+  create table if not exists schema_migrations (
+    version text primary key,
+    applied_at timestamptz not null default now()
+  )
+`;
+
+export async function runMigrations(
+  connectionString = process.env.DATABASE_URL
+): Promise<string[]> {
+  if (!connectionString) {
+    return [];
+  }
+
+  const pool = new Pool({
+    connectionString,
+    max: 1
+  });
+  const applied: string[] = [];
+
+  try {
+    await pool.query(schemaMigrationsSql);
+
+    const migrationFiles = (await readdir(migrationsDir))
+      .filter((fileName) => fileName.endsWith(".sql"))
+      .sort();
+    const appliedResult = await pool.query<{ version: string }>(
+      "select version from schema_migrations order by version"
+    );
+    const appliedVersions = new Set(appliedResult.rows.map((row) => row.version));
+
+    for (const fileName of migrationFiles) {
+      if (appliedVersions.has(fileName)) {
+        continue;
+      }
+
+      const sql = await readFile(join(migrationsDir, fileName), "utf8");
+      const client = await pool.connect();
+
+      try {
+        await client.query("begin");
+        await client.query(sql);
+        await client.query("insert into schema_migrations (version) values ($1)", [fileName]);
+        await client.query("commit");
+        applied.push(fileName);
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+  } finally {
+    await pool.end();
+  }
+
+  return applied;
+}
+
+/** @deprecated Use runMigrations instead. */
+export async function ensureCalendarSchema(
+  connectionString = process.env.DATABASE_URL
+): Promise<void> {
+  await runMigrations(connectionString);
 }
 
 export function createCalendarDatabase(
@@ -38,6 +144,10 @@ export function createCalendarDatabase(
 
 class PostgresCalendarDatabase implements CalendarDatabase {
   constructor(private readonly pool: Pool) {}
+
+  async checkConnection(): Promise<void> {
+    await this.pool.query("select 1");
+  }
 
   async close(): Promise<void> {
     await this.pool.end();
@@ -153,6 +263,63 @@ class PostgresCalendarDatabase implements CalendarDatabase {
     }
   }
 
+  async readGroupAvailability(
+    input: ReadGroupAvailabilityInput
+  ): Promise<GroupAvailabilitySnapshot> {
+    const [usersResult, windowsResult] = await Promise.all([
+      this.pool.query<PostgresAppUserRow>(
+        `
+          select id, display_name
+          from app_users
+          order by display_name
+        `
+      ),
+      this.pool.query<PostgresUserAvailabilityWindowRow>(
+        `
+          select
+            id,
+            user_id,
+            to_char(starts_at, 'YYYY-MM-DD"T"HH24:MI:SS') as starts_at,
+            to_char(ends_at, 'YYYY-MM-DD"T"HH24:MI:SS') as ends_at,
+            status
+          from user_availability_windows
+          where starts_at < $2::timestamp
+            and ends_at > $1::timestamp
+          order by starts_at, user_id
+        `,
+        [input.start, input.end]
+      )
+    ]);
+
+    return {
+      users: usersResult.rows,
+      windows: windowsResult.rows
+    };
+  }
+
+  async readUserAvailability(
+    input: ReadUserAvailabilityInput
+  ): Promise<PostgresUserAvailabilityWindowRow[]> {
+    const result = await this.pool.query<PostgresUserAvailabilityWindowRow>(
+      `
+        select
+          id,
+          user_id,
+          to_char(starts_at, 'YYYY-MM-DD"T"HH24:MI:SS') as starts_at,
+          to_char(ends_at, 'YYYY-MM-DD"T"HH24:MI:SS') as ends_at,
+          status
+        from user_availability_windows
+        where user_id = $1
+          and starts_at < $3::timestamp
+          and ends_at > $2::timestamp
+        order by starts_at
+      `,
+      [input.userId, input.start, input.end]
+    );
+
+    return result.rows;
+  }
+
   async saveDataset(dataset: CourtCalendarDataset): Promise<void> {
     const client = await this.pool.connect();
 
@@ -177,6 +344,60 @@ class PostgresCalendarDatabase implements CalendarDatabase {
     } finally {
       client.release();
     }
+  }
+
+  async replaceUserAvailability(input: ReplaceUserAvailabilityInput): Promise<void> {
+    const client = await this.pool.connect();
+
+    try {
+      await client.query("begin");
+      await client.query(
+        `
+          delete from user_availability_windows
+          where user_id = $1
+            and starts_at < $3::timestamp
+            and ends_at > $2::timestamp
+        `,
+        [input.userId, input.start, input.end]
+      );
+
+      for (const window of input.windows) {
+        await upsertUserAvailabilityWindow(client, window);
+      }
+
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async upsertUser(displayName: string): Promise<PostgresAppUserRow> {
+    const normalizedName = normalizeDisplayName(displayName);
+
+    if (!normalizedName) {
+      throw new Error("Display name is required.");
+    }
+
+    const row: PostgresAppUserRow = {
+      id: makeUserId(normalizedName),
+      display_name: normalizedName
+    };
+    const result = await this.pool.query<PostgresAppUserRow>(
+      `
+        insert into app_users (id, display_name)
+        values ($1, $2)
+        on conflict (id) do update set
+          display_name = excluded.display_name,
+          updated_at = now()
+        returning id, display_name
+      `,
+      [row.id, row.display_name]
+    );
+
+    return result.rows[0] ?? row;
   }
 }
 
@@ -336,4 +557,43 @@ async function upsertBooking(client: PoolClient, row: PostgresCourtBookingRow): 
       JSON.stringify(row.metadata)
     ]
   );
+}
+
+async function upsertUserAvailabilityWindow(
+  client: PoolClient,
+  row: PostgresUserAvailabilityWindowRow
+): Promise<void> {
+  await client.query(
+    `
+      insert into user_availability_windows (
+        id,
+        user_id,
+        starts_at,
+        ends_at,
+        status
+      )
+      values ($1, $2, $3, $4, $5)
+      on conflict (id) do update set
+        user_id = excluded.user_id,
+        starts_at = excluded.starts_at,
+        ends_at = excluded.ends_at,
+        status = excluded.status,
+        updated_at = now()
+    `,
+    [row.id, row.user_id, row.starts_at, row.ends_at, row.status]
+  );
+}
+
+function normalizeDisplayName(value: string): string {
+  return value.trim().replace(/\s+/g, " ").slice(0, 80);
+}
+
+function makeUserId(displayName: string): string {
+  const slug = displayName
+    .toLowerCase()
+    .replace(/[^a-z0-9._:-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const digest = createHash("sha256").update(displayName).digest("hex").slice(0, 10);
+
+  return `user:${slug || "name"}:${digest}`;
 }

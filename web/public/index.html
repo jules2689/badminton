@@ -10,6 +10,13 @@
   <body>
     <main class="shell">
       <header class="topbar">
+        <div class="auth-corner" aria-label="Current user">
+          <div id="userBadge" class="user-badge" hidden>
+            <span id="userName"></span>
+            <button id="logoutButton" class="logout-button" type="button">Logout</button>
+          </div>
+        </div>
+
         <div class="brand">
           <img class="brand-mark" src="/court-mark.svg" alt="" />
           <div>
@@ -25,27 +32,111 @@
           <button id="nextWeek" class="icon-button" type="button" title="Next week" aria-label="Next week">
             <span aria-hidden="true">›</span>
           </button>
+          <div class="view-toggle" role="group" aria-label="View mode">
+            <button class="view-toggle-button" type="button" data-view-mode="calendar" aria-pressed="true">
+              Choose your availability
+            </button>
+            <button class="view-toggle-button" type="button" data-view-mode="overview" aria-pressed="false">
+              Overview
+            </button>
+          </div>
           <button id="refreshButton" class="refresh-button" type="button">Refresh</button>
         </div>
       </header>
 
-      <section class="metrics" aria-label="Calendar summary">
-        <div>
-          <span class="metric-label">Courts</span>
-          <strong id="courtCount">-</strong>
+      <section class="calendar-panel" aria-label="Court booking calendar" data-view-mode="calendar">
+        <div class="panel-meta">
+          <div id="status" class="status" role="status">Loading bookings</div>
+          <div class="legend legend-calendar" aria-label="Legend">
+            <div class="legend-group">
+              <span class="legend-heading">Courts</span>
+              <ul class="legend-list">
+                <li>
+                  <span class="availability-mark availability-mark-high" aria-hidden="true">✓</span>
+                  Lots
+                </li>
+                <li>
+                  <span class="availability-mark availability-mark-low" aria-hidden="true">!</span>
+                  Limited
+                </li>
+                <li>
+                  <span class="availability-mark availability-mark-none" aria-hidden="true">×</span>
+                  Full
+                </li>
+              </ul>
+            </div>
+            <div class="legend-divider" aria-hidden="true"></div>
+            <div class="legend-group">
+              <span class="legend-heading">Your selection</span>
+              <ul class="legend-list">
+                <li>
+                  <span class="legend-cell legend-cell-available" aria-hidden="true">
+                    <span class="legend-cell-badge">You</span>
+                  </span>
+                  Available
+                </li>
+                <li>
+                  <span class="legend-cell legend-cell-maybe" aria-hidden="true">
+                    <span class="legend-cell-badge">? Maybe</span>
+                  </span>
+                  Maybe
+                </li>
+              </ul>
+            </div>
+          </div>
+          <div class="legend legend-overview" aria-label="Legend" hidden>
+            <div class="legend-group">
+              <span class="legend-heading">Signals</span>
+              <ul class="legend-list">
+                <li>
+                  <span class="heatmap-signal heatmap-signal-available heatmap-signal-legend" aria-hidden="true">✓</span>
+                  Available
+                </li>
+                <li>
+                  <span class="heatmap-signal heatmap-signal-maybe heatmap-signal-legend" aria-hidden="true">?</span>
+                  Maybe
+                </li>
+                <li>
+                  <span class="heatmap-signal heatmap-signal-unset heatmap-signal-legend" aria-hidden="true">—</span>
+                  No response
+                </li>
+                <li>
+                  <span class="availability-mark availability-mark-none" aria-hidden="true">×</span>
+                  Cannot attend
+                </li>
+              </ul>
+            </div>
+            <div class="legend-divider" aria-hidden="true"></div>
+            <div class="legend-group">
+              <span class="legend-heading">Group heat</span>
+              <ul class="legend-list">
+                <li>
+                  <span class="legend-heat legend-heat-low" aria-hidden="true"></span>
+                  Few
+                </li>
+                <li>
+                  <span class="legend-heat legend-heat-mid" aria-hidden="true"></span>
+                  Some
+                </li>
+                <li>
+                  <span class="legend-heat legend-heat-high" aria-hidden="true"></span>
+                  Many available
+                </li>
+                <li>
+                  <span class="legend-heat legend-heat-none" aria-hidden="true">×</span>
+                  None
+                </li>
+              </ul>
+            </div>
+            <div class="legend-divider" aria-hidden="true"></div>
+            <div class="legend-group">
+              <span class="legend-heading">Hover a slot</span>
+              <ul class="legend-list">
+                <li>See who is available, maybe, cannot attend, or has not responded</li>
+              </ul>
+            </div>
+          </div>
         </div>
-        <div>
-          <span class="metric-label">Location slots</span>
-          <strong id="openSlotCount">-</strong>
-        </div>
-        <div>
-          <span class="metric-label">Fetched</span>
-          <strong id="fetchedAt">-</strong>
-        </div>
-      </section>
-
-      <section class="calendar-panel" aria-label="Court booking calendar">
-        <div id="status" class="status" role="status">Loading bookings</div>
         <div id="loadingOverlay" class="loading-overlay" aria-hidden="true">
           <div class="loading-spinner"></div>
           <span>Refreshing</span>
@@ -53,6 +144,7 @@
         <div class="calendar-scroll">
           <div id="calendar" class="calendar" aria-live="polite"></div>
         </div>
+        <div id="heatmapTooltip" class="heatmap-tooltip" role="tooltip" hidden></div>
       </section>
     </main>
 
